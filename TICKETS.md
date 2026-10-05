@@ -54,7 +54,7 @@ flowchart TD
 
 | Done | ID | Title | Assigned | Blocked By | Status | Details |
 |:---:|:---:|---|:---:|:---:|:---:|:---:|
-| [ ] | **01** | Shared Protocol Buffer & gRPC IPC Contract | **raadhika-N** | None | `ready-for-agent` | [Issue 01](.scratch/heimdall/issues/01-grpc-ipc-contract.md) |
+| [x] | **01** | Shared Protocol Buffer & gRPC IPC Contract | **raadhika-N** | None | `complete` | [Issue 01](.scratch/heimdall/issues/01-grpc-ipc-contract.md) |
 | [ ] | **02** | Python AI Worker ReAct Reasoning Engine | **Agent B** | `01` | `ready-for-agent` | [Issue 02](.scratch/heimdall/issues/02-python-ai-worker.md) |
 | [ ] | **03** | Deterministic Safety Gating & Risk Matrix in Go | **raadhika-N** | `01` | `ready-for-agent` | [Issue 03](.scratch/heimdall/issues/03-go-safety-permissions.md) |
 | [ ] | **04** | DevOps Diagnostic Tool Registry (Docker & Systemd) | **raadhika-N** | `03` | `ready-for-agent` | [Issue 04](.scratch/heimdall/issues/04-devops-tools-registry.md) |

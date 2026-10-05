@@ -6,9 +6,9 @@
 
 **Assigned to:** Agent 1 (or Agent 2)
 
-**Status:** ready-for-agent
+**Status:** complete
 
-- [ ] `proto/v1/agent_service.proto` defines `AIWorkerService.DecideNextStep` with `DecideRequest` and `DecideResponse`.
-- [ ] `Message` schema supports `user`, `assistant`, and `tool` roles with `tool_call_id`.
-- [ ] `ToolDefinition` and `ToolCall` represent schemas and parameters as JSON strings.
-- [ ] Running `make proto` generates valid, error-free stubs for both Go and Python.
+- [x] `proto/v1/agent_service.proto` defines `AIWorkerService.DecideNextStep` with `DecideRequest` and `DecideResponse`.
+- [x] `Message` schema supports `user`, `assistant`, and `tool` roles with `tool_call_id`.
+- [x] `ToolDefinition` and `ToolCall` represent schemas and parameters as JSON strings.
+- [x] Running `make proto` generates valid, error-free stubs for both Go and Python.
