@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Reference: Heimdall Architecture & First Principles</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <style>
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      font-size: 12px;
+      font-family: var(--font-mono);
+      font-weight: 700;
+      border-radius: 4px;
+      text-transform: uppercase;
+    }
+    .badge.readonly { background: #dcfce7; color: #166534; border: 1px solid #86efac; }
+    .badge.safewrite { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
+    .badge.dangerous { background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; }
+    table { width: 100%; border-collapse: collapse; margin: 20px 0; font-family: var(--font-sans); font-size: 14px; }
+    th, td { border: 1px solid var(--border); padding: 10px 14px; text-align: left; }
+    th { background: #f8fafc; font-weight: 700; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div class="eyebrow">Heimdall Technical Reference &bull; Sheet 01</div>
+    <h1>Heimdall Architecture & System Invariants</h1>
+    <p>A compressed systems reference card covering runtime topology, microservice boundaries, safety guarantees, and the Ticket 01 IPC contract.</p>
+  </header>
+
+  <h2>1. First Principles & Motivation</h2>
+  <p>In production containerized environments, incident triage accounts for 60&ndash;80% of Mean-Time-To-Diagnose (MTTD). Engineers manually execute a deterministic diagnostic tree: inspecting container states, reading recent stderr logs, checking network sockets, and analyzing exit codes.</p>
+  <p>Heimdall decouples <strong>probabilistic hypothesis formulation</strong> (AI reasoning) from <strong>deterministic tool execution &amp; safety gating</strong> (compiled systems code).</p>
+
+  <h2>2. System Topology & Responsibility Matrix</h2>
+  <div class="diagram-card">
++-------------------------------------------------------------------------------+
+| HOST MACHINE                                                                  |
+|   Heimdall Host CLI (`bin/heimdall`, alias `hml`) [Go / Cobra / Lipgloss]     |
+|   - Interactive terminal UI, human approval prompts ([y/N]), streaming output |
++---------------------------------------+---------------------------------------+
+                                        | gRPC (Port 50051)
++---------------------------------------v---------------------------------------+
+| DOCKER COMPOSE LOCAL ENVIRONMENT                                              |
+|                                                                               |
+|   Go API Gateway & DevOps Core Engine [Port 50051]                            |
+|   - Single stateful ReAct orchestrator                                        |
+|   - Deterministic Permission & Risk Matrix Engine                             |
+|   - Tool execution (Docker SDK, systemd, TCP/HTTP network probes)             |
+|   - Audit persistence (PostgreSQL 16 via pgx/sqlc)                            |
++---------------------------------------+---------------------------------------+
+                                        | gRPC (Port 50052)
++---------------------------------------v---------------------------------------+
+|   Python AI Worker Pool [Port 50052]                                          |
+|   - Stateless ReAct reasoner (Anthropic Claude 3.5 Sonnet Messages API)       |
+|   - Converts conversation history & tool schemas to LLM prompts               |
+|   - Emits structured tool calls or final diagnosis (zero direct system exec)  |
++-------------------------------------------------------------------------------+
+  </div>
+
+  <h2>3. Deterministic Safety Risk Tiers</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Risk Level</th>
+        <th>Execution Policy</th>
+        <th>Representative Tools</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><span class="badge readonly">READ_ONLY</span></td>
+        <td>Auto-approved. Zero state alteration.</td>
+        <td><code>docker_inspect</code>, <code>docker_logs</code>, <code>net_http_probe</code></td>
+      </tr>
+      <tr>
+        <td><span class="badge safewrite">SAFE_WRITE</span></td>
+        <td>Interactive human confirmation required (<code>[y/N]</code>).</td>
+        <td><code>docker_restart</code>, <code>systemd_restart</code></td>
+      </tr>
+      <tr>
+        <td><span class="badge dangerous">DANGEROUS</span></td>
+        <td>Explicit confirmation + impact notice. Zero-trust default.</td>
+        <td><code>docker_stop</code>, <code>docker_remove</code>, unrecognized tools</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>4. Ticket 01 IPC Contract Breakdown</h2>
+  <p>Implemented in <code>proto/v1/agent_service.proto</code>:</p>
+  <ul>
+    <li><strong>Unary Turn Model:</strong> <code>rpc DecideNextStep (DecideRequest) returns (DecideResponse);</code> ensures Python remains stateless while Go maintains the authoritative session history.</li>
+    <li><strong>Polymorphic Tool Schemas:</strong> <code>json_schema</code> and <code>arguments_json</code> are serialized JSON strings. Tools can be added, updated, or deprecated in Go without recompiling protobuf definitions.</li>
+    <li><strong>ReAct Decomposition:</strong> <code>DecideResponse</code> isolates internal reasoning (<code>thought</code>) from actions (<code>requested_tool_calls</code>) and resolution (<code>final_answer</code>, <code>is_final_answer</code>).</li>
+  </ul>
+
+  <footer>
+    <span>Heimdall Reference 01</span>
+    <span>Grounded in <code>docs/PRD.md</code> and <code>proto/v1/agent_service.proto</code></span>
+  </footer>
+</div>
+</body>
+</html>

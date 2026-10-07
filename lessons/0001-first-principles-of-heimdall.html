@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Lesson 0001: First Principles of Heimdall & The IPC Contract</title>
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<div class="container">
+  <header>
+    <div class="eyebrow">Lesson 0001 &bull; Heimdall Core Architecture</div>
+    <h1>The Working of Heimdall from First Principles</h1>
+    <p>How Heimdall transforms incident response through deterministic safety gating, polyglot separation, and a type-safe gRPC contract.</p>
+  </header>
+
+  <h2>1. The Root Problem: The Manual Incident Decision Tree</h2>
+  <p>When an infrastructure incident occurs&mdash;such as a crash-looping Docker container, an out-of-memory (OOM) kill, or a failing network socket&mdash;engineers spend up to 80% of their Mean-Time-To-Diagnose (MTTD) executing a routine, manual investigative loop:</p>
+  <ol>
+    <li>Query status: <code>docker ps</code> or <code>systemctl status</code>.</li>
+    <li>Collect stdout/stderr traces: <code>docker logs --tail 100</code>.</li>
+    <li>Inspect runtime state: <code>docker inspect &lt;container&gt;</code> to extract exit codes and memory thresholds.</li>
+    <li>Probe network dependencies: <code>curl -I http://localhost:8080/health</code>.</li>
+  </ol>
+  <p>This manual loop is slow, repetitive, and context-switching intensive. However, handing this entire loop over to an unstructured LLM CLI wrapper introduces severe hazards: LLMs hallucinate non-existent files, invent fake log output, or execute catastrophic commands (e.g., <code>rm -rf /</code>).</p>
+
+  <h2>2. First Principle: Probabilistic Reasoning vs. Deterministic Gating</h2>
+  <p>Heimdall is designed around a fundamental separation of concerns:</p>
+  <ul>
+    <li><strong>The AI (Probabilistic):</strong> High-dimensional pattern matching, hypothesis formulation, and next-step reasoning. It answers: <em>"Given these logs and exit code 137, what tool should I run next?"</em></li>
+    <li><strong>The Systems Engine (Deterministic):</strong> Code-enforced safety gating, argument sanitization, and execution. It answers: <em>"Is this tool permitted to run? Does this argument contain shell injection? Does the operator approve this write?"</em></li>
+  </ul>
+
+  <div class="callout warning">
+    <div class="callout-title">Core Invariant: Zero AI Command Execution</div>
+    <p>The Python AI Worker is mathematically incapable of executing system commands. It can only emit structured JSON requests across gRPC. Every command is validated and executed by compiled Go code.</p>
+  </div>
+
+  <h2>3. Why Polyglot Microservices (Go + Python)?</h2>
+  <p>Why not write the entire application in Python or Go?</p>
+  <ul>
+    <li><strong>Go for the Core Gateway &amp; CLI:</strong> Low memory footprint, fast startup times (&lt;20ms), static compilation into a single binary, first-class native Docker SDK and systemd DBus bindings, and memory safety for security gating.</li>
+    <li><strong>Python for the AI Reasoner:</strong> Native ecosystem for AI SDKs (Anthropic, LiteLLM, Pydantic, Instructor), dynamic prompt composition, and evaluation harnesses.</li>
+  </ul>
+
+  <h2>4. How Ticket 01 Establishes the Foundation</h2>
+  <p>Ticket 01 implemented the cross-language spine: the gRPC Protocol Buffer contract in <code>proto/v1/agent_service.proto</code>.</p>
+  <div class="diagram-card">
+Go Gateway (Host / Docker)                    Python AI Worker (Docker)
+        │                                                 │
+        │ ── DecideRequest(history, available_tools) ───► │
+        │                                                 │ [Claude 3.5 Sonnet]
+        │ ◄── DecideResponse(thought, tool_calls) ─────── │
+        │                                                 │
+[Permission Engine evaluates risk]                        │
+[Go executes tool / asks operator]                        │
+        │                                                 │
+        │ ── DecideRequest(history + tool_result) ──────► │
+  </div>
+
+  <p>Three critical design decisions were embedded in Ticket 01:</p>
+  <ol>
+    <li><strong>Polymorphic Stringified JSON Schemas:</strong> Tool input schemas and invocation arguments are passed as JSON strings (<code>arguments_json</code>). This decouples tool evolution from protobuf re-compilation.</li>
+    <li><strong>Unary Synchronous Turns:</strong> The RPC is unary (<code>DecideNextStep</code>). The Go Gateway remains the authoritative state machine; the Python worker is completely stateless per turn.</li>
+    <li><strong>Explicit ReAct Isolation:</strong> Reasoning (<code>thought</code>) is separated from actions (<code>requested_tool_calls</code>) and conclusions (<code>final_answer</code>), enabling real-time terminal streaming.</li>
+  </ol>
+
+  <h2>5. Interactive Knowledge Check</h2>
+  <div class="quiz-box" id="quiz1">
+    <div class="quiz-question">Why does the architecture forbid the Python AI Worker from directly executing shell commands on the host?</div>
+    <div class="quiz-option" onclick="checkAnswer(this, false)">Python subprocess calls consume excessive system memory resources during triage.</div>
+    <div class="quiz-option" onclick="checkAnswer(this, true)">Deterministic security boundaries must be strictly enforced by compiled Go code.</div>
+    <div class="quiz-option" onclick="checkAnswer(this, false)">Docker containers cannot open local subprocesses without root privileges granted.</div>
+    <div class="quiz-option" onclick="checkAnswer(this, false)">Claude 3.5 Sonnet requires gRPC protocol buffers to generate bash commands.</div>
+    <div class="quiz-feedback" id="feedback1"></div>
+  </div>
+
+  <h2>6. Primary Resources &amp; Next Steps</h2>
+  <p>For deeper architectural background, review these primary sources:</p>
+  <ul>
+    <li><a href="../reference/01-heimdall-architecture-reference.html">Heimdall Architecture Reference Card</a></li>
+    <li><a href="../docs/PRD.md">Master PRD (v2.0.0)</a> &bull; Complete technical specification</li>
+    <li><a href="../docs/architecture.md">Architecture Specification &amp; Threat Model</a></li>
+    <li><a href="../proto/v1/agent_service.proto">Ticket 01 Protobuf Contract</a></li>
+  </ul>
+
+  <div class="callout success">
+    <div class="callout-title">Teacher Reminder</div>
+    <p>Feel free to ask followup questions or test edge cases in chat! When you're ready, we can proceed to implement Ticket 02 (Python Worker) or Ticket 03 (Go Permission Engine).</p>
+  </div>
+
+  <footer>
+    <span>Lesson 0001 &bull; Heimdall</span>
+    <span>Created under <code>teach</code> skill protocol</span>
+  </footer>
+</div>
+
+<script>
+function checkAnswer(el, isCorrect) {
+  const box = el.parentElement;
+  const feedback = box.querySelector('.quiz-feedback');
+  const options = box.querySelectorAll('.quiz-option');
+  options.forEach(opt => opt.style.pointerEvents = 'none');
+  
+  if (isCorrect) {
+    el.style.background = '#dcfce7';
+    el.style.borderColor = '#16a34a';
+    feedback.style.display = 'block';
+    feedback.style.background = '#dcfce7';
+    feedback.style.color = '#166534';
+    feedback.innerHTML = '<strong>Correct!</strong> LLM reasoning is probabilistic. Security gating, argument sanitization, and permission checks must be deterministic and enforced by the compiled Go Gateway.';
+  } else {
+    el.style.background = '#fee2e2';
+    el.style.borderColor = '#dc2626';
+    feedback.style.display = 'block';
+    feedback.style.background = '#fee2e2';
+    feedback.style.color = '#991b1b';
+    feedback.innerHTML = '<strong>Incorrect.</strong> The restriction exists because LLM output is probabilistic. To eliminate hallucinated or destructive commands, all execution and gating is strictly reserved for the compiled Go Gateway.';
+  }
+}
+</script>
+</body>
+</html>
