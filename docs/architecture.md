@@ -28,7 +28,7 @@ Heimdall is built as a **polyglot microservices system** deployed locally via Do
 │   ┌───────────────▼────────┐  ┌───────▼─────────────┐  ┌──▼─────────┐ │
 │   │ Python AI Worker Pool  │  │ PostgreSQL 16 DB    │  │ Redis 7    │ │
 │   │ - Agent Prompt Builder │  │ - Sessions Table    │  │ - Event Bus│ │
-│   │ - Claude 3.5 Sonnet API│  │ - Audit Logs Table  │  │ - Task Queue││
+│   │ - LiteLLM BYOK Router  │  │ - Audit Logs Table  │  │ - Task Queue││
 │   └────────────────────────┘  └─────────────────────┘  └────────────┘ │
 └────────────────────────────────────────────────────────────────────────┘
 ```
@@ -62,8 +62,8 @@ Heimdall is built as a **polyglot microservices system** deployed locally via Do
 - Written in **Python 3.11+**.
 - Exposes gRPC server on `:50052`.
 - Formats messages and JSON schemas for available tools.
-- Invokes Anthropic Claude 3.5 Sonnet API via the `anthropic` SDK.
-- Parses Claude's reasoning thoughts and structured `tool_use` requests, returning them via gRPC to the Go Gateway.
+- Invokes configured LLM via `litellm` (OpenAI, Anthropic Claude, Google Gemini, Groq, or local Ollama/vLLM endpoints via `OPENAI_API_BASE`), with automatic fallback to deterministic mock reasoning when API keys are absent.
+- Parses the model's reasoning thoughts and structured tool calls, returning them via gRPC to the Go Gateway.
 
 ### 2.4 Persistence Layer (PostgreSQL 16 & Redis 7)
 - **PostgreSQL**: Stores session state and audit logs. Schema managed via `golang-migrate` versioned SQL files (`000001_init_schema.up.sql`). Type-safe query code compiled into Go using `sqlc`.

@@ -64,7 +64,7 @@ Unlike traditional imperative CLIs (`docker`, `kubectl`, `systemctl`) that execu
          v                                                                        v
 +-----------------------------+                                          +------------------+
 |    Python AI Worker Pool    |                                          |  PostgreSQL 16   |
-| - Claude 3.5 Sonnet Client  |                                          | - sessions       |
+| - LiteLLM BYOK Router       |                                          | - sessions       |
 | - Structured Tool Schemas   |                                          | - audit_logs     |
 | - Multi-Turn Reasoning      |                                          +------------------+
 +-----------------------------+
@@ -74,7 +74,7 @@ Unlike traditional imperative CLIs (`docker`, `kubectl`, `systemctl`) that execu
 1. **Deterministic Safety Gating (Code-Level, Non-Bypassable)**: The AI reasoning worker *cannot* execute system commands directly. Risk classification (`READ_ONLY`, `SAFE_WRITE`, `DANGEROUS`) is evaluated by a compiled Go permission engine. Unapproved destructive actions are physically blocked before reaching the host shell or Docker daemon.
 2. **Polyglot High-Performance Architecture**:
    - **Go**: Powers the fast host CLI client (`hml`/`heimdall`), API Gateway, permission engine, Docker Go SDK, Linux systemd DBus/subprocess execution, and `sqlc` database layer.
-   - **Python**: Handles AI/LLM SDK integrations, prompt engineering, structured Pydantic schemas, and Anthropic Claude 3.5 Sonnet agent reasoning loops.
+   - **Python**: Handles AI/LLM SDK integrations, prompt engineering, structured Pydantic schemas, and provider-agnostic agent reasoning loops via `litellm` (supporting OpenAI, Anthropic Claude, Google Gemini, Groq, or local Ollama/vLLM models).
 3. **Grounded Observation (Zero Hallucination)**: System state is strictly derived from actual tool outputs (`docker inspect`, `journalctl`, HTTP probes), logged and verified turn-by-turn.
 4. **Immutable Audit Trail**: Every prompt, intermediate thought, proposed tool call, risk score, human confirmation, tool stdout/stderr, and final diagnosis is transactionally committed to **PostgreSQL 16**.
 
@@ -121,7 +121,7 @@ flowchart TD
    - `net_http_probe` (`READ_ONLY`): Tests TCP/HTTP reachability, status codes, and latency against local endpoints.
    - `systemd_status` (`READ_ONLY`): Checks host systemd service statuses (`systemctl status`).
    - `docker_restart` (`SAFE_WRITE`): Restarts a container (requires interactive operator confirmation).
-7. **Agent Reasoning**: ReAct paradigm powered by Anthropic Claude 3.5 Sonnet (`claude-3-5-sonnet-20241022`). The model receives structured tool schemas, generates chain-of-thought rationale, and selects tools sequentially.
+7. **Agent Reasoning**: ReAct paradigm powered by LiteLLM multi-provider engine (supporting Anthropic Claude 3.5 Sonnet, OpenAI GPT-4o, Google Gemini, Groq, or local Ollama models via BYOK API keys). The model receives structured tool schemas, generates chain-of-thought rationale, and selects tools sequentially.
 8. **Observation Collection**: Execution outputs (JSON strings or sanitized stdout/stderr) are collected by Go tool runners, sanitized for secrets, and passed as `tool_result` messages in the next gRPC turn.
 9. **Hypothesis Generation**: The model combines observed facts (e.g., exit code `137` + log line `"Out of memory: Kill process"`) to hypothesize causes (e.g., container memory limit exceeded).
 10. **Hypothesis Validation**: If evidence is inconclusive, the agent invokes a secondary tool (e.g., inspects resource limits in container config) to confirm the hypothesis before concluding.
@@ -137,7 +137,7 @@ flowchart TD
 |---|:---:|:---:|---|
 | **Go Host CLI (`heimdall` / `hml`)** | **Yes** | `[P0] REQUIRED` | Primary user entrypoint; streaming TUI and interactive confirmation interface. |
 | **Go API Gateway & Turn Controller** | **Yes** | `[P0] REQUIRED` | Central orchestrator enforcing safety, tool execution, session loops, and DB audit trails. |
-| **Python AI Worker (`Anthropic SDK`)** | **Yes** | `[P0] REQUIRED` | Powers Claude 3.5 Sonnet ReAct reasoning, schema generation, and structured tool calling. |
+| **Python AI Worker (`LiteLLM Multi-Provider`)** | **Yes** | `[P0] REQUIRED` | Powers provider-agnostic BYOK ReAct reasoning (OpenAI, Claude, Gemini, Ollama), schema generation, and structured tool calling. |
 | **gRPC Inter-Service Communication** | **Yes** | `[P0] REQUIRED` | High-performance, schema-enforced IPC between CLI, Go Gateway, and Python Worker. |
 | **PostgreSQL 16 & sqlc Persistence** | **Yes** | `[P0] REQUIRED` | Transactional storage for sessions and immutable audit logs (core engineering requirement). |
 | **Deterministic 3-Tier Security Engine** | **Yes** | `[P0] REQUIRED` | Non-bypassable code gate (`READ_ONLY`, `SAFE_WRITE`, `DANGEROUS`) before any tool execution. |
@@ -164,7 +164,7 @@ flowchart TD
 |---|---|---|---|
 | **Host CLI (`hml`)** | Go 1.22+ (`cobra`, `lipgloss`) | Command parsing, streaming output rendering, interactive `[y/N]` approval prompts. | Native Host Binary (`/usr/local/bin/hml`) |
 | **Go API Gateway** | Go 1.22+ (`grpc`, `pgx/v5`, `sqlc`, `docker-client`) | ReAct loop orchestrator, permission evaluator, Docker/System tool executor, DB transaction logger. | Docker Container (`heimdall-gateway:50051`) |
-| **Python AI Worker** | Python 3.11+ (`grpcio`, `anthropic`, `pydantic`) | Claude 3.5 Sonnet ReAct reasoning, system prompt injection, tool schema serialization, step decision logic. | Docker Container (`heimdall-worker:50052`) |
+| **Python AI Worker** | Python 3.11+ (`grpcio`, `litellm`, `pydantic`) | Provider-agnostic BYOK ReAct reasoning (OpenAI, Claude, Gemini, Ollama), system prompt injection, tool schema serialization, step decision logic. | Docker Container (`heimdall-worker:50052`) |
 | **Audit Database** | PostgreSQL 16 Alpine | Relational storage for `sessions` and `audit_logs` tables. | Docker Container (`heimdall-postgres:5432`) |
 | **Message Broker** | Redis 7 Alpine | Event streaming channel for audit events and real-time telemetry. | Docker Container (`heimdall-redis:6379`) |
 
@@ -221,7 +221,9 @@ CREATE INDEX IF NOT EXISTS idx_sessions_created ON sessions(created_at DESC);
 
 ### 4.4 Configuration & Secrets Requirements
 
-- `ANTHROPIC_API_KEY`: Anthropic API key passed to the Python AI worker container.
+- `LLM_MODEL`: Configurable model name (e.g. `openai/gpt-4o`, `anthropic/claude-3-5-sonnet-20241022`, `ollama/llama3.1`).
+- `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `GEMINI_API_KEY`: User-provided API keys (BYOK).
+- `OPENAI_API_BASE`: Optional custom endpoint for local Ollama / vLLM execution.
 - `DATABASE_URL`: `postgres://devops:devops_password@heimdall-postgres:5432/heimdall_db?sslmode=disable`.
 - `REDIS_URL`: `heimdall-redis:6379`.
 - `GATEWAY_GRPC_PORT`: `50051`.
@@ -649,31 +651,33 @@ CREATE INDEX IF NOT EXISTS idx_sessions_created ON sessions(created_at DESC);
 
 ---
 
-### Phase 0.6 — Python AI Worker & Claude 3.5 Sonnet ReAct Engine
+### Phase 0.6 — Python AI Worker & Multi-Provider ReAct Engine
 
-#### `TASK-0.6.1` — Implement Anthropic Client & System Prompt Engine
+#### `TASK-0.6.1` — Implement Multi-Provider Client & System Prompt Engine
 - **Priority**: `P0`
 - **Phase**: `Phase 0.6`
-- **Objective**: Implement Anthropic Claude 3.5 Sonnet API client and prompt construction module in Python.
+- **Objective**: Implement LiteLLM multi-provider API client (BYOK) and prompt construction module in Python.
 - **Implementation Description**:
-  - Create `services/python-worker/src/llm/client.py` wrapping `anthropic.Anthropic`.
-  - Create `services/python-worker/src/llm/prompts.py` generating the Heimdall system prompt:
+  - Create `services/python-worker/providers/litellm_provider.py` wrapping `litellm` (OpenAI, Claude, Gemini, Groq, Ollama).
+  - Create deterministic offline mock reasoning fallback in `services/python-worker/providers/mock_provider.py`.
+  - Create system prompt engine:
     - Enforces evidence grounding (never hallucinate missing state).
     - Instructs sequential tool execution.
     - Demands structured Markdown root-cause diagnosis upon sufficient evidence.
-  - Implement message history formatting converting proto `Message` list into Anthropic API format (including `tool_use` and `tool_result` blocks).
-- **Why It Is Needed**: Drives the core intelligence and reasoning capabilities of the agent.
+  - Implement message history formatting converting proto `Message` list into standard LLM format (`user`, `assistant`, `tool`).
+- **Why It Is Needed**: Drives the core intelligence and reasoning capabilities of the agent across any user-selected model.
 - **Dependencies**: `TASK-0.1.2`, `TASK-0.2.3`.
 - **Expected Files / Directories**:
-  - `services/python-worker/src/llm/client.py`
-  - `services/python-worker/src/llm/prompts.py`
-  - `services/python-worker/tests/test_prompts.py`
-- **Technologies Involved**: Python 3.11+, Anthropic Python SDK (`anthropic`).
+  - `services/python-worker/providers/base.py`
+  - `services/python-worker/providers/litellm_provider.py`
+  - `services/python-worker/providers/mock_provider.py`
+  - `services/python-worker/tests/test_litellm_provider.py`
+- **Technologies Involved**: Python 3.11+, `litellm`, `pydantic`.
 - **Inputs**: Conversation history, user prompt, and tool definitions.
-- **Outputs**: Formatted Anthropic API payload and system prompt.
-- **API / Interface Requirements**: `LLMClient.create_decision(...)`.
+- **Outputs**: Formatted LLM payload and system prompt.
+- **API / Interface Requirements**: `BaseReasoner.decide(...)`.
 - **Testing Requirements**: Unit test asserting message list conversion for user, assistant, and tool result turns.
-- **Acceptance Criteria**: Tool results are correctly wrapped in `<observation_data>` tags without schema validation errors.
+- **Acceptance Criteria**: Tool schemas and calls are correctly serialized across providers without schema validation errors.
 - **Definition of Done**: Prompt tests and message serialization tests passing.
 
 ---
@@ -683,8 +687,8 @@ CREATE INDEX IF NOT EXISTS idx_sessions_created ON sessions(created_at DESC);
 - **Phase**: `Phase 0.6`
 - **Objective**: Implement the gRPC server handling `DecideNextStep` RPC requests from the Go Gateway.
 - **Implementation Description**:
-  - Create `services/python-worker/src/server.py` implementing `agent_service_pb2_grpc.AIWorkerServiceServicer`.
-  - In `DecideNextStep`, parse `available_tools` JSON schemas, invoke Claude 3.5 Sonnet, parse response blocks into `thought`, `tool_calls`, and `final_answer`.
+  - Create `services/python-worker/server.py` implementing `agent_service_pb2_grpc.AIWorkerServiceServicer`.
+  - In `DecideNextStep`, parse `available_tools` JSON schemas, invoke configured provider via LiteLLM (or mock fallback), parse response blocks into `thought`, `tool_calls`, and `final_answer`.
   - Handle exceptions gracefully, returning structured error messages.
   - Create entrypoint `services/python-worker/main.py` listening on `:50052`.
 - **Why It Is Needed**: Exposes the Python reasoning worker as a microservice callable by the Go Gateway.

@@ -70,8 +70,7 @@ Heimdall is explicitly engineered to avoid the failure modes of generic "LLM CLI
 
 ### 3.2 Python AI Worker Pool (`Python 3.11+`)
 - **gRPC Service**: `grpcio`, `grpcio-tools`.
-- **LLM SDKs**: `anthropic` (Claude 3.5 Sonnet API), `litellm` (Fallback provider support).
-- **Data Validation & Parsing**: `pydantic` v2, `instructor`.
+- **LLM SDKs**: `litellm` (Unified multi-provider engine supporting OpenAI, Anthropic, Gemini, Groq, and local Ollama/vLLM endpoints), `pydantic` v2, `instructor`.
 - **Logging & Utilities**: `structlog`.
 
 ### 3.3 Infrastructure & Storage
@@ -108,7 +107,7 @@ Heimdall is explicitly engineered to avoid the failure modes of generic "LLM CLI
 |  +----------------v-------+   +--------v----------------+   +--v---------------+  |
 |  | Python AI Worker Pool  |   | PostgreSQL 16 Database  |   | Redis 7 Broker   |  |
 |  | (services/python-worker|   | (heimdall-postgres:5432)|   | (heimdall-redis: |  |
-|  |  - Claude 3.5 Sonnet)  |   | - sessions table        |   |    6379)         |  |
+|  |  - LiteLLM BYOK Router)|   | - sessions table        |   |    6379)         |  |
 |  |                        |   | - audit_logs table      |   | - audit channel  |  |
 |  +------------------------+   +-------------------------+   +------------------+  |
 +-----------------------------------------------------------------------------------+
@@ -466,10 +465,11 @@ import agent_pb2_grpc
 
 class AIWorkerService(agent_pb2_grpc.AIWorkerServiceServicer):
     def __init__(self):
-        api_key = os.getenv("ANTHROPIC_API_KEY")
-        if not api_key:
-            raise ValueError("ANTHROPIC_API_KEY environment variable is required")
-        self.client = Anthropic(api_key=api_key)
+        # Reads user-configured model (OpenAI, Claude, Gemini, Groq, Ollama)
+        self.model = os.getenv("LLM_MODEL", "anthropic/claude-3-5-sonnet-20241022")
+        # BYOK: Reads any provider key (OPENAI_API_KEY, ANTHROPIC_API_KEY, GEMINI_API_KEY)
+        # or local endpoint (OPENAI_API_BASE). Falls back to deterministic mock if no keys.
+        self.has_keys = any(os.getenv(k) for k in ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY", "GROQ_API_KEY"]) or bool(os.getenv("OPENAI_API_BASE"))
 
     def DecideNextStep(self, request, context):
         system_prompt = (
@@ -628,8 +628,10 @@ Heimdall includes an automated eval suite (`tests/evals/`) to benchmark reasonin
 git clone https://github.com/raghavdev/heimdall.git
 cd heimdall
 
-# 2. Set Anthropic API Key
-export ANTHROPIC_API_KEY="sk-ant-api03-..."
+# 2. Set LLM API Key (Bring Your Own Key - OpenAI, Anthropic, Gemini, or local Ollama)
+export OPENAI_API_KEY="sk-proj-..."              # or export ANTHROPIC_API_KEY="sk-ant-..."
+export LLM_MODEL="openai/gpt-4o"                 # or export LLM_MODEL="anthropic/claude-3-5-sonnet-20241022"
+# Or for local Ollama: export OPENAI_API_BASE="http://localhost:11434/v1" LLM_MODEL="ollama/llama3.1"
 
 # 3. Spin up local Docker Compose backend
 docker compose up -d

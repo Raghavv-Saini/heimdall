@@ -30,7 +30,7 @@ hml "why is my web container crash-looping?"
 1. **Deterministic Safety Gating (Code-Level, Non-Bypassable)**: The AI reasoning worker *cannot* execute system commands directly. Risk classification (`READ_ONLY`, `SAFE_WRITE`, `DANGEROUS`) is evaluated by a compiled Go permission engine. Unapproved destructive actions are physically blocked before reaching the host shell or Docker daemon.
 2. **Polyglot High-Performance Architecture**: 
    - **Go**: Powers the fast host CLI client (`hml`/`heimdall`), API Gateway, permission engine, Docker Go SDK, Linux systemd DBus/subprocess execution, and `sqlc` database layer.
-   - **Python**: Handles AI/LLM SDK integrations, prompt engineering, structured Pydantic schemas, and Anthropic Claude 3.5 Sonnet agent reasoning loops.
+   - **Python**: Handles AI/LLM integrations, prompt engineering, structured Pydantic schemas, and provider-agnostic agent reasoning loops via `litellm` (supporting OpenAI, Anthropic Claude, Google Gemini, Groq, or local Ollama/vLLM models).
 3. **Grounded Observation (Zero Hallucination)**: System state is strictly derived from actual tool outputs (`docker inspect`, `journalctl`, HTTP probes), logged and verified turn-by-turn.
 4. **Immutable Audit Trail**: Every prompt, intermediate thought, proposed tool call, risk score, human confirmation, tool stdout/stderr, and final diagnosis is transactionally committed to **PostgreSQL 16**.
 
@@ -48,7 +48,7 @@ graph TD
         GW[Go API Gateway & DevOps Core<br/>- Permission & Risk Gating Engine<br/>- Tool Execution Registry<br/>- Systemd & Docker Integration<br/>- Session State Machine]
         DB[(PostgreSQL 16<br/>- Session Store<br/>- Immutable Audit Log)]
         REDIS[(Redis 7<br/>- Audit Event Bus<br/>- Async Task Queue)]
-        PY[Python AI Worker Pool<br/>- ReAct Agent Loop<br/>- System Prompt Builder<br/>- Anthropic Claude 3.5 Sonnet API Client]
+        PY[Python AI Worker Pool<br/>- ReAct Agent Loop<br/>- System Prompt Builder<br/>- LiteLLM Multi-Provider BYOK Router]
     end
 
     subgraph Host Operating System & Diagnostic Surfaces
@@ -56,7 +56,7 @@ graph TD
         SYSTEMD[Linux Systemd / Journald<br/>DBus & Subprocess]
         NET[Network Socket Probes<br/>TCP / HTTP / DNS]
         GIT[Git Workspace Repository]
-        LLM[Anthropic Claude API<br/>https://api.anthropic.com]
+        LLM[LLM API / Local Endpoint<br/>OpenAI / Anthropic / Gemini / Ollama]
     end
 
     CLI <-->|gRPC Port 50051<br/>Stream Thoughts & Approvals| GW
@@ -64,7 +64,7 @@ graph TD
     GW -->|pgx / sqlc| DB
     GW <-->|Redis Pub/Sub| REDIS
     PY <-->|Async Event Logs| REDIS
-    PY <-->|HTTPS API| LLM
+    PY <-->|HTTPS / HTTP API| LLM
     GW -->|Docker Go SDK| DOCKER
     GW -->|systemctl / journalctl| SYSTEMD
     GW -->|HTTP Probes| NET
@@ -101,7 +101,7 @@ graph TD
 - Docker & Docker Compose v2 installed
 - Go 1.22+ installed
 - Python 3.11+ installed
-- Anthropic API Key (`export ANTHROPIC_API_KEY="your-api-key"`)
+- LLM API Key or Local Endpoint (e.g. `export OPENAI_API_KEY="your-key"` or `export ANTHROPIC_API_KEY="your-key"`, or `export OPENAI_API_BASE="http://localhost:11434/v1"` for local Ollama)
 
 ### 2. Start the Local Microservices Stack
 ```bash

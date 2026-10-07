@@ -14,7 +14,7 @@
 |---|---|---|---|
 | **Foundation** | **raadhika-N** | Protobuf IPC Contract & Build Setup | [01](#01-shared-protocol-buffer--grpc-ipc-contract) |
 | **Track A: Systems & Go** | **raadhika-N** | Permission Engine, Tool Registry, Gateway Loop, Host CLI (`hml`) | [03](#03-deterministic-safety-gating--risk-matrix-in-go), [04](#04-devops-diagnostic-tool-registry-docker--systemd), [05](#05-gateway-turn-orchestrator--session-loop), [07](#07-interactive-host-cli-heimdall--hml--lipgloss-tui) |
-| **Track B: AI & Evals** | **Person B / Agent B** | Python Worker, Claude 3.5 Sonnet ReAct, Benchmark Evals, Docker Stack | [02](#02-python-ai-worker-react-reasoning-engine--tool-calling), [06](#06-automated-evaluation-benchmark-suite-oom--safety-gating), [08](#08-postgresql-16-audit-persistence--docker-stack-integration) |
+| **Track B: AI & Evals** | **Person B / Agent B** | Python Worker, Multi-Provider ReAct (BYOK), Benchmark Evals, Docker Stack | [02](#02-python-ai-worker-react-reasoning-engine--tool-calling), [06](#06-automated-evaluation-benchmark-suite-oom--safety-gating), [08](#08-postgresql-16-audit-persistence--docker-stack-integration) |
 
 ---
 
