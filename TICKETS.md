@@ -56,7 +56,7 @@ flowchart TD
 |:---:|:---:|---|:---:|:---:|:---:|:---:|
 | [x] | **01** | Shared Protocol Buffer & gRPC IPC Contract | **raadhika-N** | None | `complete` | [Issue 01](.scratch/heimdall/issues/01-grpc-ipc-contract.md) |
 | [ ] | **02** | Python AI Worker ReAct Reasoning Engine | **Agent B** | `01` | `ready-for-agent` | [Issue 02](.scratch/heimdall/issues/02-python-ai-worker.md) |
-| [ ] | **03** | Deterministic Safety Gating & Risk Matrix in Go | **raadhika-N** | `01` | `ready-for-agent` | [Issue 03](.scratch/heimdall/issues/03-go-safety-permissions.md) |
+| [x] | **03** | Deterministic Safety Gating & Risk Matrix in Go | **raadhika-N** | `01` | `complete` | [Issue 03](.scratch/heimdall/issues/03-go-safety-permissions.md) |
 | [ ] | **04** | DevOps Diagnostic Tool Registry (Docker & Systemd) | **raadhika-N** | `03` | `ready-for-agent` | [Issue 04](.scratch/heimdall/issues/04-devops-tools-registry.md) |
 | [ ] | **05** | Gateway Turn Orchestrator & Session Loop | **raadhika-N** | `02`, `04` | `ready-for-agent` | [Issue 05](.scratch/heimdall/issues/05-gateway-orchestrator.md) |
 | [ ] | **06** | Automated Evaluation Benchmark Suite | **Agent B** | `02` | `ready-for-agent` | [Issue 06](.scratch/heimdall/issues/06-eval-benchmark-suite.md) |

@@ -6,9 +6,9 @@
 
 **Assigned to:** Agent A (Systems & Go Track)
 
-**Status:** ready-for-agent
+**Status:** complete
 
-- [ ] `services/go-gateway/permissions/engine.go` implements static risk mapping and argument sanitization.
-- [ ] Unknown tool requests default to `DANGEROUS`.
-- [ ] Attempted shell injections in arguments return a validation error.
-- [ ] Unit tests in `engine_test.go` cover `READ_ONLY`, `SAFE_WRITE`, `DANGEROUS`, zero-trust, and injection rejection with 100% pass rate.
+- [x] `services/go-gateway/permissions/engine.go` implements static risk mapping and argument sanitization.
+- [x] Unknown tool requests default to `DANGEROUS`.
+- [x] Attempted shell injections in arguments return a validation error.
+- [x] Unit tests in `engine_test.go` cover `READ_ONLY`, `SAFE_WRITE`, `DANGEROUS`, zero-trust, and injection rejection with 100% pass rate.
