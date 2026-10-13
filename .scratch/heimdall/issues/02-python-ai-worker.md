@@ -6,11 +6,11 @@
 
 **Assigned to:** Agent B (AI & Reasoning Track)
 
-**Status:** ready-for-agent
+**Status:** complete
 
-- [ ] `services/python-worker/requirements.txt` specifies `grpcio`, `litellm`, and `pydantic`.
-- [ ] `services/python-worker/main.py` starts gRPC server on port `50052`.
-- [ ] Converts incoming `Message` history to provider format (`user`, `assistant`, `tool`).
-- [ ] When API keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, etc.) or `OPENAI_API_BASE` are present, calls the model specified in `LLM_MODEL` via `litellm`.
-- [ ] When API keys are absent or `HEIMDALL_MOCK_REASONING=true`, runs deterministic mock reasoning for crash investigations.
-- [ ] Turn-by-turn tests pass for both tool call generation and final answer delivery.
+- [x] `services/python-worker/requirements.txt` specifies `grpcio`, `litellm`, and `pydantic`.
+- [x] `services/python-worker/main.py` starts gRPC server on port `50052`.
+- [x] Converts incoming `Message` history to provider format (`user`, `assistant`, `tool`).
+- [x] When API keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, etc.) or `OPENAI_API_BASE` are present, calls the model specified in `LLM_MODEL` via `litellm`.
+- [x] When API keys are absent or `HEIMDALL_MOCK_REASONING=true`, runs deterministic mock reasoning for crash investigations.
+- [x] Turn-by-turn tests pass for both tool call generation and final answer delivery.
