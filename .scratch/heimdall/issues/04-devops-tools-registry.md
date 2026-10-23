@@ -6,11 +6,11 @@
 
 **Assigned to:** Agent A (Systems & Go Track)
 
-**Status:** ready-for-agent
+**Status:** complete
 
-- [ ] `services/go-gateway/tools/tool.go` defines uniform `Tool` interface.
-- [ ] `docker_inspect.go` retrieves container state, exit codes, and OOMKilled flag.
-- [ ] `docker_logs.go` retrieves recent stdout/stderr lines with configurable tail limits.
-- [ ] `systemd_status.go` queries systemctl service units with timeout protection.
-- [ ] `net_http_probe.go` checks HTTP status code, latency, and response headers.
-- [ ] `registry.go` packages tools into Protobuf `ToolDefinition` list for the AI worker.
+- [x] `services/go-gateway/tools/tool.go` defines uniform `Tool` interface.
+- [x] `docker_inspect.go` retrieves container state, exit codes, and OOMKilled flag.
+- [x] `docker_logs.go` retrieves recent stdout/stderr lines with configurable tail limits.
+- [x] `systemd_status.go` queries systemctl service units with timeout protection.
+- [x] `net_http_probe.go` checks HTTP status code, latency, and response headers.
+- [x] `registry.go` packages tools into Protobuf `ToolDefinition` list for the AI worker.
