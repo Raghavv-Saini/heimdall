@@ -17,12 +17,15 @@ type NetHTTPProbeTool struct {
 	client *http.Client
 }
 
-// NewNetHTTPProbeTool constructs a NetHTTPProbeTool with default timeouts.
+// NewNetHTTPProbeTool constructs a NetHTTPProbeTool with client controlled by request context.
 func NewNetHTTPProbeTool() *NetHTTPProbeTool {
+	return NewNetHTTPProbeToolWithClient(&http.Client{})
+}
+
+// NewNetHTTPProbeToolWithClient constructs a NetHTTPProbeTool with a custom HTTP client.
+func NewNetHTTPProbeToolWithClient(client *http.Client) *NetHTTPProbeTool {
 	return &NetHTTPProbeTool{
-		client: &http.Client{
-			Timeout: 5 * time.Second,
-		},
+		client: client,
 	}
 }
 
@@ -71,6 +74,9 @@ func (t *NetHTTPProbeTool) Execute(ctx context.Context, argsJSON string) (string
 	targetURL := strings.TrimSpace(args.URL)
 	if targetURL == "" {
 		return "", fmt.Errorf("missing required argument: 'url'")
+	}
+	if err := ValidateSafeArgument("url", targetURL); err != nil {
+		return "", err
 	}
 	if !strings.HasPrefix(targetURL, "http://") && !strings.HasPrefix(targetURL, "https://") {
 		targetURL = "http://" + targetURL

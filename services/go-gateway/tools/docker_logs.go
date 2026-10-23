@@ -64,31 +64,38 @@ func (t *DockerLogsTool) RiskLevel() permissions.RiskLevel {
 func (t *DockerLogsTool) Execute(ctx context.Context, argsJSON string) (string, error) {
 	var args struct {
 		ContainerID string `json:"container_id"`
-		Tail        int    `json:"tail"`
+		Tail        any    `json:"tail"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 		return "", fmt.Errorf("malformed JSON arguments: %w", err)
 	}
-	if strings.TrimSpace(args.ContainerID) == "" {
+	containerID := strings.TrimSpace(args.ContainerID)
+	if containerID == "" {
 		return "", fmt.Errorf("missing required argument: 'container_id'")
 	}
-
-	tailLimit := args.Tail
-	if tailLimit <= 0 {
-		tailLimit = 100
-	}
-	if tailLimit > 1000 {
-		tailLimit = 1000
+	if err := ValidateSafeArgument("container_id", containerID); err != nil {
+		return "", err
 	}
 
+	tailLimit := parseTailLimit(args.Tail, 100, 1000)
 	tailStr := strconv.Itoa(tailLimit)
-	output, err := t.runner(ctx, "docker", "logs", "--tail", tailStr, args.ContainerID)
+
+	output, err := t.runner(ctx, "docker", "logs", "--tail", tailStr, containerID)
 	if err != nil {
-		return "", fmt.Errorf("docker logs failed: %w (output: %s)", err, strings.TrimSpace(string(output)))
+		// Return structured observation instead of failing with raw Go error
+		notFoundResult := map[string]any{
+			"container_id": containerID,
+			"found":        false,
+			"error":        strings.TrimSpace(string(output)),
+			"logs":         "",
+		}
+		bytes, _ := json.MarshalIndent(notFoundResult, "", "  ")
+		return string(bytes), nil
 	}
 
 	res := map[string]any{
-		"container_id": args.ContainerID,
+		"container_id": containerID,
+		"found":        true,
 		"tail":         tailLimit,
 		"logs":         string(output),
 	}
@@ -99,4 +106,41 @@ func (t *DockerLogsTool) Execute(ctx context.Context, argsJSON string) (string, 
 	}
 
 	return string(bytes), nil
+}
+
+// parseTailLimit converts int, float64, or string tail inputs into bounded int.
+func parseTailLimit(val any, defaultVal, maxVal int) int {
+	if val == nil {
+		return defaultVal
+	}
+	switch v := val.(type) {
+	case float64:
+		n := int(v)
+		if n <= 0 {
+			return defaultVal
+		}
+		if n > maxVal {
+			return maxVal
+		}
+		return n
+	case int:
+		if v <= 0 {
+			return defaultVal
+		}
+		if v > maxVal {
+			return maxVal
+		}
+		return v
+	case string:
+		n, err := strconv.Atoi(strings.TrimSpace(v))
+		if err != nil || n <= 0 {
+			return defaultVal
+		}
+		if n > maxVal {
+			return maxVal
+		}
+		return n
+	default:
+		return defaultVal
+	}
 }

@@ -67,18 +67,9 @@ func (r *Registry) List() []Tool {
 
 // ToProtobuf converts all registered tools into a list of Protobuf ToolDefinitions for the AI Worker.
 func (r *Registry) ToProtobuf() []*agentv1.ToolDefinition {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	names := make([]string, 0, len(r.tools))
-	for name := range r.tools {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-
-	defs := make([]*agentv1.ToolDefinition, 0, len(names))
-	for _, name := range names {
-		tool := r.tools[name]
+	tools := r.List()
+	defs := make([]*agentv1.ToolDefinition, 0, len(tools))
+	for _, tool := range tools {
 		defs = append(defs, &agentv1.ToolDefinition{
 			Name:        tool.Name(),
 			Description: tool.Description(),

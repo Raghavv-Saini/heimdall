@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/raghavdev/heimdall/services/go-gateway/permissions"
 	"github.com/raghavdev/heimdall/services/go-gateway/tools"
@@ -98,7 +99,7 @@ func TestRegistryLifecycle(t *testing.T) {
 }
 
 func TestDockerInspectTool(t *testing.T) {
-	// Sample mock Docker inspect JSON output for an OOM-killed container
+	// Sample mock Docker inspect JSON output with mounts
 	sampleDockerJSON := `[
 		{
 			"Id": "c3a1f8e21a4598716253491283",
@@ -111,7 +112,14 @@ func TestDockerInspectTool(t *testing.T) {
 				"Error": "fatal error",
 				"FinishedAt": "2026-10-23T16:20:00Z"
 			},
-			"RestartCount": 5
+			"RestartCount": 5,
+			"Mounts": [
+				{
+					"Source": "/var/data",
+					"Destination": "/app/data",
+					"Mode": "rw"
+				}
+			]
 		}
 	]`
 
@@ -156,11 +164,33 @@ func TestDockerInspectTool(t *testing.T) {
 	if !strings.Contains(resultJSON, `"c3a1f8e21a45"`) {
 		t.Errorf("expected output to contain 12-char container ID, got: %s", resultJSON)
 	}
+	if !strings.Contains(resultJSON, `"/app/data"`) {
+		t.Errorf("expected output to contain mount destination, got: %s", resultJSON)
+	}
 
 	// Test missing container_id
 	_, err = tool.Execute(context.Background(), `{}`)
 	if err == nil {
 		t.Errorf("expected error on missing container_id, got nil")
+	}
+
+	// Test shell injection rejection in argument
+	_, err = tool.Execute(context.Background(), `{"container_id":"payment; rm -rf /"}`)
+	if err == nil {
+		t.Errorf("expected error on shell injection metacharacter, got nil")
+	}
+
+	// Test container not found returns structured JSON observation
+	notFoundRunner := func(ctx context.Context, name string, args ...string) ([]byte, error) {
+		return []byte("Error: No such container: ghost-app"), fmt.Errorf("exit status 1")
+	}
+	notFoundTool := tools.NewDockerInspectToolWithRunner(notFoundRunner)
+	notFoundRes, err := notFoundTool.Execute(context.Background(), `{"container_id":"ghost-app"}`)
+	if err != nil {
+		t.Fatalf("expected observation JSON on missing container, got error: %v", err)
+	}
+	if !strings.Contains(notFoundRes, `"found": false`) || !strings.Contains(notFoundRes, "No such container") {
+		t.Errorf("unexpected not-found observation: %s", notFoundRes)
 	}
 
 	// Test malformed JSON
@@ -191,7 +221,7 @@ func TestDockerLogsTool(t *testing.T) {
 		t.Errorf("expected READ_ONLY, got '%s'", tool.RiskLevel())
 	}
 
-	// 1. Test execution with explicit tail
+	// 1. Test execution with explicit integer tail
 	resJSON, err := tool.Execute(context.Background(), `{"container_id":"payment-api","tail":50}`)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -206,7 +236,16 @@ func TestDockerLogsTool(t *testing.T) {
 		t.Errorf("expected logs to contain fatal message, got: %s", resJSON)
 	}
 
-	// 2. Test execution with default tail (tail omitted)
+	// 2. Test execution with stringified tail ("50")
+	_, err = tool.Execute(context.Background(), `{"container_id":"payment-api","tail":"50"}`)
+	if err != nil {
+		t.Fatalf("unexpected error parsing stringified tail: %v", err)
+	}
+	if capturedArgs[2] != "50" {
+		t.Errorf("expected parsed tail '50', got '%s'", capturedArgs[2])
+	}
+
+	// 3. Test execution with default tail (tail omitted)
 	_, err = tool.Execute(context.Background(), `{"container_id":"payment-api"}`)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -215,10 +254,29 @@ func TestDockerLogsTool(t *testing.T) {
 		t.Errorf("expected default tail 100, got '%s'", capturedArgs[2])
 	}
 
-	// 3. Test missing container_id
+	// 4. Test missing container_id
 	_, err = tool.Execute(context.Background(), `{}`)
 	if err == nil {
 		t.Errorf("expected error for missing container_id, got nil")
+	}
+
+	// 5. Test shell injection metacharacter rejection
+	_, err = tool.Execute(context.Background(), `{"container_id":"web` + "`whoami`" + `"}`)
+	if err == nil {
+		t.Errorf("expected error on shell injection, got nil")
+	}
+
+	// 6. Test container logs failure observation
+	failRunner := func(ctx context.Context, name string, args ...string) ([]byte, error) {
+		return []byte("Error: No such container: ghost-app"), fmt.Errorf("exit status 1")
+	}
+	failTool := tools.NewDockerLogsToolWithRunner(failRunner)
+	failRes, err := failTool.Execute(context.Background(), `{"container_id":"ghost-app"}`)
+	if err != nil {
+		t.Fatalf("expected JSON observation on error, got: %v", err)
+	}
+	if !strings.Contains(failRes, `"found": false`) {
+		t.Errorf("expected found: false observation, got: %s", failRes)
 	}
 }
 
@@ -232,7 +290,6 @@ func TestSystemdStatusTool(t *testing.T) {
 	mockRunner := func(ctx context.Context, name string, args ...string) ([]byte, error) {
 		capturedName = name
 		capturedArgs = args
-		// Simulate systemctl non-zero exit code 3 (inactive/dead)
 		return []byte(sampleDeadOutput), nil
 	}
 
@@ -262,6 +319,12 @@ func TestSystemdStatusTool(t *testing.T) {
 	}
 	if !strings.Contains(resJSON, `"service_name": "payment.service"`) {
 		t.Errorf("expected service_name in json, got: %s", resJSON)
+	}
+
+	// Test shell injection rejection
+	_, err = tool.Execute(context.Background(), `{"service_name":"payment && reboot"}`)
+	if err == nil {
+		t.Errorf("expected error on shell injection sequence, got nil")
 	}
 
 	// Test missing service_name
@@ -317,10 +380,31 @@ func TestNetHTTPProbeTool(t *testing.T) {
 		t.Errorf("expected reachable false, got: %s", unreachableResJSON)
 	}
 
-	// 4. Test missing url
+	// 4. Test custom timeout parameter (> 5s) works without error
+	slowServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(100 * time.Millisecond)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer slowServer.Close()
+
+	slowRes, err := tool.Execute(context.Background(), fmt.Sprintf(`{"url":"%s","timeout_seconds":10}`, slowServer.URL))
+	if err != nil {
+		t.Fatalf("unexpected error on slow server with 10s timeout: %v", err)
+	}
+	if !strings.Contains(slowRes, `"reachable": true`) {
+		t.Errorf("expected reachable true, got: %s", slowRes)
+	}
+
+	// 5. Test missing url
 	_, err = tool.Execute(context.Background(), `{}`)
 	if err == nil {
 		t.Errorf("expected error for missing url, got nil")
+	}
+
+	// 6. Test shell injection metacharacter rejection
+	_, err = tool.Execute(context.Background(), `{"url":"http://localhost; rm -rf /"}`)
+	if err == nil {
+		t.Errorf("expected error on shell injection metacharacter in URL, got nil")
 	}
 }
 
@@ -367,8 +451,3 @@ func TestDefaultRegistry(t *testing.T) {
 		}
 	}
 }
-
-
-
-
-

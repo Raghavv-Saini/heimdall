@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/raghavdev/heimdall/services/go-gateway/permissions"
 )
@@ -65,15 +66,23 @@ func (t *SystemdStatusTool) Execute(ctx context.Context, argsJSON string) (strin
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 		return "", fmt.Errorf("malformed JSON arguments: %w", err)
 	}
-	if strings.TrimSpace(args.ServiceName) == "" {
+	serviceName := strings.TrimSpace(args.ServiceName)
+	if serviceName == "" {
 		return "", fmt.Errorf("missing required argument: 'service_name'")
 	}
+	if err := ValidateSafeArgument("service_name", serviceName); err != nil {
+		return "", err
+	}
 
-	output, err := t.runner(ctx, "systemctl", "status", args.ServiceName, "--no-pager")
+	// Enforce 5-second default timeout protection if caller context has none
+	statusCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	output, err := t.runner(statusCtx, "systemctl", "status", serviceName, "--no-pager")
 	exitCode := 0
 	if err != nil {
-		if ctx.Err() != nil {
-			return "", fmt.Errorf("systemd status timed out: %w", ctx.Err())
+		if statusCtx.Err() != nil {
+			return "", fmt.Errorf("systemd status timed out: %w", statusCtx.Err())
 		}
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {
@@ -85,7 +94,7 @@ func (t *SystemdStatusTool) Execute(ctx context.Context, argsJSON string) (strin
 	}
 
 	res := map[string]any{
-		"service_name": args.ServiceName,
+		"service_name": serviceName,
 		"exit_code":    exitCode,
 		"active":       exitCode == 0,
 		"output":       string(output),

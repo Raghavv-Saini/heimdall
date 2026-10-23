@@ -9,7 +9,7 @@ import (
 	"github.com/raghavdev/heimdall/services/go-gateway/permissions"
 )
 
-// DockerInspectTool retrieves container state, exit codes, and OOMKilled telemetry.
+// DockerInspectTool retrieves container state, exit codes, OOMKilled flag, and mounts telemetry.
 type DockerInspectTool struct {
 	runner CommandRunner
 }
@@ -63,13 +63,24 @@ func (t *DockerInspectTool) Execute(ctx context.Context, argsJSON string) (strin
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 		return "", fmt.Errorf("malformed JSON arguments: %w", err)
 	}
-	if strings.TrimSpace(args.ContainerID) == "" {
+	containerID := strings.TrimSpace(args.ContainerID)
+	if containerID == "" {
 		return "", fmt.Errorf("missing required argument: 'container_id'")
 	}
+	if err := ValidateSafeArgument("container_id", containerID); err != nil {
+		return "", err
+	}
 
-	output, err := t.runner(ctx, "docker", "inspect", args.ContainerID)
+	output, err := t.runner(ctx, "docker", "inspect", containerID)
 	if err != nil {
-		return "", fmt.Errorf("docker inspect failed: %w (output: %s)", err, strings.TrimSpace(string(output)))
+		// Return structured observation instead of failing with raw Go error
+		notFoundResult := map[string]any{
+			"container_id": containerID,
+			"found":        false,
+			"error":        strings.TrimSpace(string(output)),
+		}
+		bytes, _ := json.MarshalIndent(notFoundResult, "", "  ")
+		return string(bytes), nil
 	}
 
 	var rawInspect []struct {
@@ -84,13 +95,18 @@ func (t *DockerInspectTool) Execute(ctx context.Context, argsJSON string) (strin
 			FinishedAt string `json:"FinishedAt"`
 		} `json:"State"`
 		RestartCount int `json:"RestartCount"`
+		Mounts       []struct {
+			Source      string `json:"Source"`
+			Destination string `json:"Destination"`
+			Mode        string `json:"Mode"`
+		} `json:"Mounts"`
 	}
 
 	if err := json.Unmarshal(output, &rawInspect); err != nil {
 		return "", fmt.Errorf("failed to parse docker inspect output: %w", err)
 	}
 	if len(rawInspect) == 0 {
-		return "", fmt.Errorf("docker inspect returned empty inspection array for '%s'", args.ContainerID)
+		return "", fmt.Errorf("docker inspect returned empty inspection array for '%s'", containerID)
 	}
 
 	item := rawInspect[0]
@@ -101,7 +117,7 @@ func (t *DockerInspectTool) Execute(ctx context.Context, argsJSON string) (strin
 
 	cleanResult := map[string]any{
 		"id":            shortID,
-		"name":          item.Name,
+		"name":          strings.TrimPrefix(item.Name, "/"),
 		"status":        item.State.Status,
 		"running":       item.State.Running,
 		"exit_code":     item.State.ExitCode,
@@ -109,6 +125,7 @@ func (t *DockerInspectTool) Execute(ctx context.Context, argsJSON string) (strin
 		"error":         item.State.Error,
 		"restart_count": item.RestartCount,
 		"finished_at":   item.State.FinishedAt,
+		"mounts":        item.Mounts,
 	}
 
 	bytes, err := json.MarshalIndent(cleanResult, "", "  ")
