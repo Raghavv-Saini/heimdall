@@ -96,6 +96,50 @@ func TestRegistryLifecycle(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected error executing unregistered tool, got nil")
 	}
+
+	// Verify deterministic safety gating: shell injection is blocked by permission engine
+	_, err = reg.Execute(context.Background(), "mock_echo", `{"val":"test; rm -rf /"}`)
+	if err == nil {
+		t.Fatalf("expected permission engine error on shell injection, got nil")
+	}
+	if !strings.Contains(err.Error(), "permission evaluation failed") {
+		t.Errorf("expected permission evaluation error, got: %v", err)
+	}
+
+	// Verify deterministic safety gating: dangerous tool requires approval and is blocked in Execute
+	dangerousTool := &mockTool{
+		name:        "mock_dangerous_reboot",
+		description: "Reboot mock tool",
+		schema:      `{"type":"object"}`,
+		riskLevel:   permissions.RiskLevelDangerous,
+		executeFn: func(ctx context.Context, argsJSON string) (string, error) {
+			return `{"rebooted":true}`, nil
+		},
+	}
+	reg.Register(dangerousTool)
+
+	_, err = reg.Execute(context.Background(), "mock_dangerous_reboot", `{}`)
+	if err == nil {
+		t.Fatalf("expected error executing unapproved dangerous tool via Execute, got nil")
+	}
+	if !strings.Contains(err.Error(), "requires operator approval") {
+		t.Errorf("expected requires operator approval error, got: %v", err)
+	}
+
+	// Verify ExecuteAuthorized executes when operator approved
+	authRes, err := reg.ExecuteAuthorized(context.Background(), "mock_dangerous_reboot", `{}`)
+	if err != nil {
+		t.Fatalf("unexpected error executing authorized dangerous tool: %v", err)
+	}
+	if authRes != `{"rebooted":true}` {
+		t.Errorf("unexpected authorized result: %s", authRes)
+	}
+
+	// Verify ExecuteAuthorized still blocks shell injection even if operator approved
+	_, err = reg.ExecuteAuthorized(context.Background(), "mock_dangerous_reboot", `{"bad":"&&"}`)
+	if err == nil {
+		t.Fatalf("expected ExecuteAuthorized to block shell injection, got nil")
+	}
 }
 
 func TestDockerInspectTool(t *testing.T) {

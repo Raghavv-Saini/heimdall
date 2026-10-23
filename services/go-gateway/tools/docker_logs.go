@@ -108,6 +108,16 @@ func (t *DockerLogsTool) Execute(ctx context.Context, argsJSON string) (string, 
 	return string(bytes), nil
 }
 
+func clamp(n, defaultVal, maxVal int) int {
+	if n <= 0 {
+		return defaultVal
+	}
+	if n > maxVal {
+		return maxVal
+	}
+	return n
+}
+
 // parseTailLimit converts int, float64, or string tail inputs into bounded int.
 func parseTailLimit(val any, defaultVal, maxVal int) int {
 	if val == nil {
@@ -115,31 +125,15 @@ func parseTailLimit(val any, defaultVal, maxVal int) int {
 	}
 	switch v := val.(type) {
 	case float64:
-		n := int(v)
-		if n <= 0 {
-			return defaultVal
-		}
-		if n > maxVal {
-			return maxVal
-		}
-		return n
+		return clamp(int(v), defaultVal, maxVal)
 	case int:
-		if v <= 0 {
-			return defaultVal
-		}
-		if v > maxVal {
-			return maxVal
-		}
-		return v
+		return clamp(v, defaultVal, maxVal)
 	case string:
 		n, err := strconv.Atoi(strings.TrimSpace(v))
-		if err != nil || n <= 0 {
+		if err != nil {
 			return defaultVal
 		}
-		if n > maxVal {
-			return maxVal
-		}
-		return n
+		return clamp(n, defaultVal, maxVal)
 	default:
 		return defaultVal
 	}

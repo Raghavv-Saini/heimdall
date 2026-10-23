@@ -7,18 +7,29 @@ import (
 	"sync"
 
 	agentv1 "github.com/raghavdev/heimdall/proto/v1"
+	"github.com/raghavdev/heimdall/services/go-gateway/permissions"
 )
 
-// Registry maintains an in-memory catalog of available diagnostic tools.
+// Registry maintains an in-memory catalog of available diagnostic tools gated by the permission engine.
 type Registry struct {
-	mu    sync.RWMutex
-	tools map[string]Tool
+	mu          sync.RWMutex
+	tools       map[string]Tool
+	permissions *permissions.Engine
 }
 
-// NewRegistry constructs an empty tool Registry.
+// NewRegistry constructs an empty tool Registry with a default permission engine.
 func NewRegistry() *Registry {
+	return NewRegistryWithPermissions(permissions.NewEngine())
+}
+
+// NewRegistryWithPermissions constructs an empty tool Registry with a custom permission engine.
+func NewRegistryWithPermissions(engine *permissions.Engine) *Registry {
+	if engine == nil {
+		engine = permissions.NewEngine()
+	}
 	return &Registry{
-		tools: make(map[string]Tool),
+		tools:       make(map[string]Tool),
+		permissions: engine,
 	}
 }
 
@@ -32,11 +43,19 @@ func NewDefaultRegistry() *Registry {
 	return r
 }
 
-// Register adds or updates a tool in the registry.
+// Permissions returns the permission engine bound to this registry.
+func (r *Registry) Permissions() *permissions.Engine {
+	return r.permissions
+}
+
+// Register adds or updates a tool in the registry and syncs its risk tier with the permission engine.
 func (r *Registry) Register(tool Tool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.tools[tool.Name()] = tool
+	if r.permissions != nil {
+		r.permissions.RegisterTool(tool.Name(), tool.RiskLevel())
+	}
 }
 
 // Get looks up a tool by its unique name.
@@ -80,11 +99,42 @@ func (r *Registry) ToProtobuf() []*agentv1.ToolDefinition {
 	return defs
 }
 
-// Execute dispatches execution to the registered tool by name.
+// Execute performs deterministic permission gating and dispatches execution to the registered tool.
+// Tools with risk levels requiring approval (SAFE_WRITE, DANGEROUS) are blocked from direct execution.
 func (r *Registry) Execute(ctx context.Context, name string, argsJSON string) (string, error) {
 	tool, exists := r.Get(name)
 	if !exists {
 		return "", fmt.Errorf("tool '%s' not registered in gateway", name)
 	}
+
+	// Gate execution through the deterministic safety permission engine (AGENTS.md Invariant §1)
+	if r.permissions != nil {
+		decision, err := r.permissions.Evaluate(name, argsJSON)
+		if err != nil {
+			return "", fmt.Errorf("permission evaluation failed for tool '%s': %w", name, err)
+		}
+		if decision.RequiresApproval {
+			return "", fmt.Errorf("execution blocked: tool '%s' has risk level '%s' and requires operator approval", name, decision.RiskLevel)
+		}
+	}
+
+	return tool.Execute(ctx, argsJSON)
+}
+
+// ExecuteAuthorized dispatches execution to a registered tool after explicit operator approval has been granted.
+// It still strictly enforces shell injection scanning and argument validation via the permission engine.
+func (r *Registry) ExecuteAuthorized(ctx context.Context, name string, argsJSON string) (string, error) {
+	tool, exists := r.Get(name)
+	if !exists {
+		return "", fmt.Errorf("tool '%s' not registered in gateway", name)
+	}
+
+	if r.permissions != nil {
+		_, err := r.permissions.Evaluate(name, argsJSON)
+		if err != nil {
+			return "", fmt.Errorf("permission validation failed for tool '%s': %w", name, err)
+		}
+	}
+
 	return tool.Execute(ctx, argsJSON)
 }

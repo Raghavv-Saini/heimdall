@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 )
 
 // RiskLevel represents the deterministic risk classification tier for a tool.
@@ -41,11 +42,12 @@ type PermissionDecision struct {
 
 // Engine implements deterministic safety gating and risk classification.
 type Engine struct {
+	mu         sync.RWMutex
 	riskMatrix map[string]RiskLevel
 }
 
-// forbiddenShellPatterns contains dangerous shell metacharacters and command injection sequences.
-var forbiddenShellPatterns = []string{
+// ForbiddenShellPatterns contains dangerous shell metacharacters and command injection sequences.
+var ForbiddenShellPatterns = []string{
 	";",
 	"&&",
 	"||",
@@ -53,6 +55,9 @@ var forbiddenShellPatterns = []string{
 	"$(",
 	"rm -rf",
 }
+
+// forbiddenShellPatterns is retained for internal compatibility.
+var forbiddenShellPatterns = ForbiddenShellPatterns
 
 // NewEngine constructs a new permission Engine initialized with the static MVP risk matrix.
 func NewEngine() *Engine {
@@ -74,10 +79,19 @@ func NewEngine() *Engine {
 // GetRiskLevel returns the static risk tier for the given tool name.
 // Any unrecognized tool defaults to DANGEROUS under the zero-trust policy.
 func (e *Engine) GetRiskLevel(toolName string) RiskLevel {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
 	if level, exists := e.riskMatrix[toolName]; exists {
 		return level
 	}
 	return RiskLevelDangerous
+}
+
+// RegisterTool registers or updates the risk tier for a tool in the engine's risk matrix.
+func (e *Engine) RegisterTool(toolName string, level RiskLevel) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.riskMatrix[toolName] = level
 }
 
 // Evaluate performs deterministic safety gating on a tool request.
